@@ -3,3 +3,4 @@ models/
 scripts/
 *data_inference*.sh
 *af3_docker*.tar
+*alphafold3*.sif
