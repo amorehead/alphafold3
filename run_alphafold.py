@@ -108,6 +108,11 @@ _RUN_INFERENCE = flags.DEFINE_bool(
     True,
     'Whether to run inference on the fold inputs.',
 )
+_SKIP_EXISTING = flags.DEFINE_bool(
+    'skip_existing',
+    True,
+    'Whether to skip inference for inputs with existing outputs.',
+)
 
 # Binary paths.
 _JACKHMMER_BINARY_PATH = flags.DEFINE_string(
@@ -602,6 +607,20 @@ def main(_):
     raise AssertionError(
         'Exactly one of --json_path or --input_dir must be specified.'
     )
+  
+  # Skip fold inputs that already have outputs.
+  if _SKIP_EXISTING.value:
+    print('Checking for existing outputs...')
+    fold_inputs = [
+        fold_input for fold_input in fold_inputs
+        if not os.path.exists(
+            os.path.join(_OUTPUT_DIR.value, fold_input.sanitised_name())
+        )
+    ]
+
+    if not fold_inputs:
+      print('All fold inputs already have existing outputs. Exiting.')
+      return
 
   # Make sure we can create the output directory before running anything.
   try:
