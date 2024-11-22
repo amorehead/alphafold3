@@ -1,6 +1,7 @@
 import argparse
 import json
 import logging
+import os
 import string
 
 from collections import defaultdict
@@ -39,9 +40,10 @@ def combine_sequences(sequences: Dict[str, str]) -> Dict[str, str]:
     """
     combined_sequences = defaultdict(list)
     for identifier, sequence in sequences.items():
-        pdb_code = identifier.split("_chain")[0]
-        chain_id = identifier.split("chain_")[-1]
-        combined_sequences[pdb_code].append((chain_id, sequence))
+        chain_type = "protein" if ":" not in identifier else identifier.split(":")[0]
+        pdb_code = identifier.split(":")[-1].split("_chain")[0]
+        chain_id = identifier.split(":")[-1].split("chain_")[-1]
+        combined_sequences[pdb_code].append((chain_type, chain_id, sequence))
     return combined_sequences
 
 
@@ -78,9 +80,9 @@ def write_combined_json(combined_sequences: Dict[str, str], output_filename: str
                 "name": pdb_code,
                 "sequences": [
                     {
-                        "protein": {
+                        seq[0]: {
                             "id": [chain_ids[chain_index]],
-                            "sequence": seq[1],
+                            "smiles" if seq[0] == "ligand" else "sequence": seq[-1],
                         }
                     }
                     for chain_index, seq in enumerate(seq_list)
@@ -104,15 +106,17 @@ def main():
         "--input_fasta_file",
         type=str,
         help="Path to the input FASTA file.",
-        default="data/posebusters_benchmark/sequences/reference_posebusters_benchmark_sequences.fasta",
+        default="data/astex_diverse/sequences/reference_astex_diverse_sequences_all.fasta",
     )
     parser.add_argument(
         "--output_json_file",
         type=str,
         help="Path to the output JSON file.",
-        default="data/posebusters_benchmark/sequences/fold_input.json",
+        default="data/astex_diverse/sequences_all/fold_input.json",
     )
     args = parser.parse_args()
+
+    os.makedirs(os.path.dirname(args.output_json_file), exist_ok=True)
 
     sequences = read_fasta(args.input_fasta_file)
     combined_sequences = combine_sequences(sequences)
