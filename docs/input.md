@@ -715,7 +715,7 @@ certain fields and the sequences are not biologically meaningful.
     [["A", 1, "CA"], ["G", 1, "CHA"]],
     [["J", 1, "O6"], ["J", 2, "C1"]]
   ],
-  "userCcd": ...,
+  "userCCD": ...,
   "dialect": "alphafold3",
   "version": 1
 }

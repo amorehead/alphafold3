@@ -184,7 +184,7 @@ class InferenceTest(test_utils.StructureTestCase):
         model_class=run_alphafold.diffusion_model.Diffuser,
         config=run_alphafold.make_model_config(),
         device=jax.local_devices()[0],
-        model_dir=run_alphafold.DEFAULT_MODEL_DIR,
+        model_dir=pathlib.Path(run_alphafold.MODEL_DIR.value),
     )
 
   def compare_golden(self, result_path: str) -> None:
@@ -301,7 +301,7 @@ class InferenceTest(test_utils.StructureTestCase):
               model_class=diffusion_model.Diffuser,
               config=run_alphafold.make_model_config(),
               device=jax.local_devices(backend='gpu')[0],
-              model_dir=pathlib.Path(run_alphafold.DEFAULT_MODEL_DIR),
+              model_dir=pathlib.Path(run_alphafold.MODEL_DIR.value),
           ),
           output_dir='unused output dir',
       )
@@ -332,7 +332,7 @@ class InferenceTest(test_utils.StructureTestCase):
             model_class=diffusion_model.Diffuser,
             config=run_alphafold.make_model_config(),
             device=jax.local_devices(backend='gpu')[0],
-            model_dir=pathlib.Path(run_alphafold.DEFAULT_MODEL_DIR),
+            model_dir=pathlib.Path(run_alphafold.MODEL_DIR.value),
         ),
         output_dir=output_dir,
         buckets=None if bucket is None else [bucket],

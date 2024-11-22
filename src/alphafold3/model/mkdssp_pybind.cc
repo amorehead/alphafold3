@@ -10,8 +10,7 @@
 
 #include "alphafold3/model/mkdssp_pybind.h"
 
-#include <stdlib.h>
-#include <string>
+#include <filesystem>
 
 #include <cif++/file.hpp>
 #include <cif++/pdb.hpp>
@@ -20,18 +19,29 @@
 
 #include "absl/strings/string_view.h"
 #include "pybind11/pybind11.h"
+#include "pybind11/pytypes.h"
 
 namespace alphafold3 {
 namespace py = pybind11;
 
 void RegisterModuleMkdssp(pybind11::module m) {
-  py::module resources = py::module::import("importlib.resources");
-  py::module share_libcifpp = py::module::import("share.libcifpp");
-  std::string data_dir =
-      py::cast<std::string>(resources.attr("files")(share_libcifpp)
-                                .attr("joinpath")('.')
-                                .attr("as_posix")());
-  setenv("LIBCIFPP_DATA_DIR", data_dir.c_str(), 0);
+  py::module site = py::module::import("site");
+  py::list paths = py::cast<py::list>(site.attr("getsitepackages")());
+  // Find the first path that contains the libcifpp components.cif file.
+  bool found = false;
+  for (const auto& py_path : paths) {
+    auto path_str =
+        std::filesystem::path(py::cast<absl::string_view>(py_path)) /
+        "share/libcifpp/components.cif";
+    if (std::filesystem::exists(path_str)) {
+      setenv("LIBCIFPP_DATA_DIR", path_str.parent_path().c_str(), 0);
+      found = true;
+      break;
+    }
+  }
+  if (!found) {
+    throw py::type_error("Could not find the libcifpp components.cif file.");
+  }
   m.def(
       "get_dssp",
       [](absl::string_view mmcif, int model_no,

@@ -56,8 +56,8 @@ import numpy as np
 
 
 _HOME_DIR = pathlib.Path(os.environ.get('HOME'))
-DEFAULT_MODEL_DIR = _HOME_DIR / 'models'
-DEFAULT_DB_DIR = _HOME_DIR / 'public_databases'
+_DEFAULT_MODEL_DIR = _HOME_DIR / 'models'
+_DEFAULT_DB_DIR = _HOME_DIR / 'public_databases'
 
 
 # Input and output paths.
@@ -77,9 +77,9 @@ _OUTPUT_DIR = flags.DEFINE_string(
     'Path to a directory where the results will be saved.',
 )
 
-_MODEL_DIR = flags.DEFINE_string(
+MODEL_DIR = flags.DEFINE_string(
     'model_dir',
-    DEFAULT_MODEL_DIR.as_posix(),
+    _DEFAULT_MODEL_DIR.as_posix(),
     'Path to the model to use for inference.',
 )
 
@@ -142,9 +142,9 @@ _HMMBUILD_BINARY_PATH = flags.DEFINE_string(
 )
 
 # Database paths.
-_DB_DIR = flags.DEFINE_multi_string(
+DB_DIR = flags.DEFINE_multi_string(
     'db_dir',
-    (DEFAULT_DB_DIR.as_posix(),),
+    (_DEFAULT_DB_DIR.as_posix(),),
     'Path to the directory containing the databases. Can be specified multiple'
     ' times to search multiple directories in order.',
 )
@@ -654,7 +654,7 @@ def main(_):
   print('\n'.join(notice))
 
   if _RUN_DATA_PIPELINE.value:
-    expand_path = lambda x: replace_db_dir(x, _DB_DIR.value)
+    expand_path = lambda x: replace_db_dir(x, DB_DIR.value)
     data_pipeline_config = pipeline.DataPipelineConfig(
         jackhmmer_binary_path=_JACKHMMER_BINARY_PATH.value,
         nhmmer_binary_path=_NHMMER_BINARY_PATH.value,
@@ -692,7 +692,7 @@ def main(_):
             )
         ),
         device=devices[0],
-        model_dir=pathlib.Path(_MODEL_DIR.value),
+        model_dir=pathlib.Path(MODEL_DIR.value),
     )
   else:
     print('Skipping running model inference.')

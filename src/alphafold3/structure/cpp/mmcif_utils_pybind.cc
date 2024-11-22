@@ -395,7 +395,7 @@ std::pair<py::object, MmcifLayout> MmcifFilter(  //
 
     if (layout.num_models() > 1) {
       keep_indices->reserve(layout.num_models() * new_num_atoms);
-      std::size_t* start = &(*keep_indices->begin());
+      std::uint64_t* start = &(*keep_indices->begin());
       std::size_t num_atom = keep_indices->size();
       // Copy first model indices into all model indices offsetting each copy.
       for (std::size_t i = 1; i < layout.num_models(); ++i) {

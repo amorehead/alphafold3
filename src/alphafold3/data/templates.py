@@ -10,7 +10,7 @@
 
 """API for retrieving and manipulating template search results."""
 
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 import dataclasses
 import datetime
 import functools
@@ -299,6 +299,99 @@ class Hit:
     if self.full_length < 0:
       raise ValueError(f'Full length must be non-negative: {self.full_length}')
 
+  def keep(
+      self,
+      *,
+      release_date_cutoff: datetime.date | None,
+      max_subsequence_ratio: float | None,
+      min_hit_length: int | None,
+      min_align_ratio: float | None,
+  ) -> bool:
+    """Returns whether the hit should be kept.
+
+    In addition to filtering on all of the provided parameters, this method also
+    excludes hits with unresolved residues.
+
+    Args:
+      release_date_cutoff: Maximum release date of the template.
+      max_subsequence_ratio: If set, excludes hits which are an exact
+        subsequence of the query sequence, and longer than this ratio. Useful to
+        avoid ground truth leakage.
+      min_hit_length: If set, excludes hits which have fewer residues than this.
+      min_align_ratio: If set, excludes hits where the number of residues
+        aligned to the query is less than this proportion of the template
+        length.
+    """
+    # Exclude hits which are too recent.
+    if (
+        release_date_cutoff is not None
+        and self.release_date > release_date_cutoff
+    ):
+      return False
+
+    # Exclude hits which are large duplicates of the query_sequence.
+    if (
+        max_subsequence_ratio is not None
+        and self.length_ratio > max_subsequence_ratio
+    ):
+      if self.matching_sequence in self.query_sequence:
+        return False
+
+    # Exclude hits which are too short.
+    if (
+        min_hit_length is not None
+        and len(self.matching_sequence) < min_hit_length
+    ):
+      return False
+
+    # Exclude hits with unresolved residues.
+    if not self.is_valid:
+      return False
+
+    # Exclude hits with too few alignments.
+    try:
+      if min_align_ratio is not None and self.align_ratio <= min_align_ratio:
+        return False
+    except template_realign.AlignmentError as e:
+      logging.warning('Failed to align %s: %s', self, str(e))
+      return False
+
+    return True
+
+
+def _filter_hits(
+    hits: Iterable[Hit],
+    release_date_cutoff: datetime.date,
+    max_subsequence_ratio: float | None,
+    min_align_ratio: float | None,
+    min_hit_length: int | None,
+    deduplicate_sequences: bool,
+    max_hits: int | None,
+) -> Sequence[Hit]:
+  """Filters hits based on the filter config."""
+  filtered_hits = []
+  seen_before = set()
+  for hit in hits:
+    if not hit.keep(
+        max_subsequence_ratio=max_subsequence_ratio,
+        min_align_ratio=min_align_ratio,
+        min_hit_length=min_hit_length,
+        release_date_cutoff=release_date_cutoff,
+    ):
+      continue
+
+    # Remove duplicate templates, keeping the first.
+    if deduplicate_sequences:
+      if hit.output_templates_sequence in seen_before:
+        continue
+      seen_before.add(hit.output_templates_sequence)
+
+    filtered_hits.append(hit)
+    if max_hits and len(filtered_hits) == max_hits:
+      break
+
+  return filtered_hits
+
 
 @dataclasses.dataclass(init=False)
 class Templates:
@@ -344,6 +437,7 @@ class Templates:
       hmmsearch_config: msa_config.HmmsearchConfig,
       max_a3m_query_sequences: int | None,
       structure_store: structure_stores.StructureStore,
+      filter_config: msa_config.TemplateFilterConfig | None = None,
       query_release_date: datetime.date | None = None,
       chain_poly_type: str = mmcif_names.PROTEIN_CHAIN,
   ) -> Self:
@@ -360,6 +454,9 @@ class Templates:
       max_a3m_query_sequences: The maximum number of input MSA sequences to use
         to construct the profile which is then used to search for templates.
       structure_store: Structure store to fetch template structures from.
+      filter_config: Optional config that controls which and how many hits to
+        keep. More performant than constructing and then filtering. If not
+        provided, no filtering is done.
       query_release_date: The release_date of the template query, this is used
         to filter templates for training, ensuring that they do not leak
         structure information from the future.
@@ -382,6 +479,7 @@ class Templates:
         query_release_date=query_release_date,
         chain_poly_type=chain_poly_type,
         structure_store=structure_store,
+        filter_config=filter_config,
     )
 
   @classmethod
@@ -392,6 +490,7 @@ class Templates:
       a3m: str,
       max_template_date: datetime.date,
       structure_store: structure_stores.StructureStore,
+      filter_config: msa_config.TemplateFilterConfig | None = None,
       query_release_date: datetime.date | None = None,
       chain_poly_type: str = mmcif_names.PROTEIN_CHAIN,
   ) -> Self:
@@ -404,6 +503,9 @@ class Templates:
       max_template_date: This is used to filter templates for training, ensuring
         that they do not leak ground truth information used in testing sets.
       structure_store: Structure store to fetch template structures from.
+      filter_config: Optional config that controls which and how many hits to
+        keep. More performant than constructing and then filtering. If not
+        provided, no filtering is done.
       query_release_date: The release_date of the template query, this is used
         to filter templates for training, ensuring that they do not leak
         structure information from the future.
@@ -413,36 +515,47 @@ class Templates:
       Templates object containing a list of Hits initialised from the
       structure_store metadata and a3m alignments.
     """
-    hits = []
-    for hit_seq, hit_desc in parsers.lazy_parse_fasta_string(a3m):
-      pdb_id, auth_chain_id, start, end, full_length = _parse_hit_description(
-          hit_desc
-      )
 
-      release_date, sequence, unresolved_res_ids = _parse_hit_metadata(
-          structure_store, pdb_id, auth_chain_id
-      )
+    def hit_generator(a3m: str):
+      for hit_seq, hit_desc in parsers.lazy_parse_fasta_string(a3m):
+        pdb_id, auth_chain_id, start, end, full_length = _parse_hit_description(
+            hit_desc
+        )
 
-      if unresolved_res_ids is None:
-        continue
+        release_date, sequence, unresolved_res_ids = _parse_hit_metadata(
+            structure_store, pdb_id, auth_chain_id
+        )
+        if unresolved_res_ids is None:
+          continue
 
-      # seq_unresolved_res_num are 1-based, setting to 0-based indices.
-      unresolved_indices = [i - 1 for i in unresolved_res_ids]
+        # seq_unresolved_res_num are 1-based, setting to 0-based indices.
+        unresolved_indices = [i - 1 for i in unresolved_res_ids]
 
-      hits.append(
-          Hit(
-              pdb_id=pdb_id,
-              auth_chain_id=auth_chain_id,
-              hmmsearch_sequence=hit_seq,
-              structure_sequence=sequence,
-              query_sequence=query_sequence,
-              unresolved_res_indices=unresolved_indices,
-              start_index=start - 1,  # Raw value is residue number, not index.
-              end_index=end,
-              full_length=full_length,
-              release_date=datetime.date.fromisoformat(release_date),
-              chain_poly_type=chain_poly_type,
-          )
+        yield Hit(
+            pdb_id=pdb_id,
+            auth_chain_id=auth_chain_id,
+            hmmsearch_sequence=hit_seq,
+            structure_sequence=sequence,
+            query_sequence=query_sequence,
+            unresolved_res_indices=unresolved_indices,
+            start_index=start - 1,  # Raw value is residue number, not index.
+            end_index=end,
+            full_length=full_length,
+            release_date=datetime.date.fromisoformat(release_date),
+            chain_poly_type=chain_poly_type,
+        )
+
+    if filter_config is None:
+      hits = tuple(hit_generator(a3m))
+    else:
+      hits = _filter_hits(
+          hit_generator(a3m),
+          release_date_cutoff=filter_config.max_template_date,
+          max_subsequence_ratio=filter_config.max_subsequence_ratio,
+          min_align_ratio=filter_config.min_align_ratio,
+          min_hit_length=filter_config.min_hit_length,
+          deduplicate_sequences=filter_config.deduplicate_sequences,
+          max_hits=filter_config.max_hits,
       )
 
     return Templates(
@@ -508,50 +621,19 @@ class Templates:
         of hits especially in the case of homomer hits.
       max_hits: If set, excludes any hits which exceed this count.
     """
-
-    filtered_hits = []
-    seen_before = set()
-
-    for hit in self._hits:
-      # Exclude hits if they are too recent.
-      if hit.release_date > self.release_date_cutoff:  # pylint: disable=comparison-with-callable
-        continue
-
-      # Exclude hits with too few alignments.
-      try:
-        if min_align_ratio and hit.align_ratio <= min_align_ratio:
-          continue
-      except template_realign.AlignmentError as e:
-        logging.warning('Failed to align %s: %s', hit, str(e))
-        continue
-
-      # Exclude templates which are large duplicates of the query_sequence.
-      if max_subsequence_ratio is not None:
-        if hit.length_ratio > max_subsequence_ratio:
-          if hit.matching_sequence in self.query_sequence:
-            continue
-
-      # Exclude templates which are too short.
-      if min_hit_length and len(hit.matching_sequence) < min_hit_length:
-        continue
-
-      if not hit.is_valid:
-        continue
-
-      # Remove duplicate templates, keeping the first.
-      if deduplicate_sequences:
-        if hit.output_templates_sequence in seen_before:
-          continue
-        seen_before.add(hit.output_templates_sequence)
-
-      filtered_hits.append(hit)
-      if max_hits and len(filtered_hits) == max_hits:
-        break
-
+    filtered_hits = _filter_hits(
+        hits=self._hits,
+        release_date_cutoff=self.release_date_cutoff,
+        max_subsequence_ratio=max_subsequence_ratio,
+        min_align_ratio=min_align_ratio,
+        min_hit_length=min_hit_length,
+        deduplicate_sequences=deduplicate_sequences,
+        max_hits=max_hits,
+    )
     return Templates(
         query_sequence=self.query_sequence,
         query_release_date=self.query_release_date,
-        hits=tuple(filtered_hits),
+        hits=filtered_hits,
         max_template_date=self._max_template_date,
         structure_store=self._structure_store,
     )
@@ -636,8 +718,6 @@ class Templates:
   def structures(self) -> Iterator[structure.Structure]:
     """Yields template structures for each unique PDB ID among hits.
 
-    Structures are loaded using bag parallelism in order.
-
     If there are multiple hits in the same Structure, the Structure will be
     included only once by this method.
 
@@ -648,7 +728,7 @@ class Templates:
       HitDateError: If template's release date exceeds max cutoff date.
     """
 
-    for hit in self._hits:
+    for hit in self.hits:
       if hit.release_date > self.release_date_cutoff:  # pylint: disable=comparison-with-callable
         raise HitDateError(
             f'Invalid release date for hit {hit.pdb_id=}, when release date '
@@ -656,7 +736,7 @@ class Templates:
         )
 
     # Get the set of pdbs to load. In particular, remove duplicate PDB IDs.
-    targets_to_load = tuple({hit.pdb_id for hit in self._hits})
+    targets_to_load = tuple({hit.pdb_id for hit in self.hits})
 
     for target_name in targets_to_load:
       yield structure.from_mmcif(

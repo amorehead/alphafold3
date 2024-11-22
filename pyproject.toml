@@ -22,11 +22,12 @@ dependencies = [
     "jax==0.4.34",
     "jax[cuda12]==0.4.34",
     "jax-triton==0.2.0",
-    "jaxtyping",
+    "jaxtyping==0.2.34",
     "numpy",
     "rdkit==2024.3.5",
     "triton==3.1.0",
     "tqdm",
+    "typeguard==2.13.3",
     "zstandard",
 ]
 
