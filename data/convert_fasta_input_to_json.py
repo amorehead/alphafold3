@@ -106,13 +106,13 @@ def main():
         "--input_fasta_file",
         type=str,
         help="Path to the input FASTA file.",
-        default="data/astex_diverse/sequences/reference_astex_diverse_sequences_all.fasta",
+        default="data/posebusters_benchmark/sequences/reference_posebusters_benchmark_sequences_all.fasta",
     )
     parser.add_argument(
         "--output_json_file",
         type=str,
         help="Path to the output JSON file.",
-        default="data/astex_diverse/sequences_all/fold_input.json",
+        default="data/posebusters_benchmark/sequences_all/fold_input.json",
     )
     args = parser.parse_args()
 
