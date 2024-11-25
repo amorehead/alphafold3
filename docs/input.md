@@ -320,21 +320,46 @@ If not set, the data pipeline will automatically build MSAs for protein and RNA
 entities using Jackhmmer/Nhmmer search over genetic databases as described in
 the paper.
 
-There are 3 modes for MSA:
+### RNA Multiple Sequence Alignment
 
-1.  If the `unpairedMsa` field is unset, AlphaFold 3 will build the MSA
-    automatically. This is the recommended option.
-2.  If the `unpairedMsa` field is set to an empty string (`""`), AlphaFold 3
-    will not build the MSA and the MSA input to the model will be empty.
-3.  If the `unpairedMsa` field is set to a custom A3M string, AlphaFold 3 will
-    use the provided MSA instead of building one as part of the data pipeline.
-    This is considered an expert option.
+RNA `unpairedMsa` can be either:
 
-Note that if you set the `unpairedMsa` field for a particular protein entity,
-you will also have to explicitly set the `pairedMsa` field (typically to empty
-string) and templates (either to a list of templates, or an empty list to run
-template-free). For example this will run the protein chain A with the given
-MSA, but without any templates:
+1.  Unset (or set explicitly to `null`). AlphaFold 3 won't build MSA for this
+    RNA chain.
+2.  Set to an empty string (`""`). AlphaFold 3 won't build MSA and will run
+    MSA-free for this RNA chain.
+3.  Set to a non-empty A3M string. AlphaFold 3 will use the provided MSA for
+    this RNA chain.
+
+### Protein Multiple Sequence Alignment
+
+For protein chains, the situation is slightly more complicated due to paired and
+unpaired MSA (see [MSA Pairing](#msa-pairing) below for more details).
+
+The following combinations are valid for a given protein chain:
+
+1.  Both `unpairedMsa` and `pairedMsa` fields are unset (or explicitly set to
+    `null`), AlphaFold 3 will build both MSAs automatically. This is the
+    recommended option.
+2.  The `unpairedMsa` is set to to a non-empty A3M string, `pairedMsa` set to an
+    empty string (`""`). AlphaFold 3 won't build MSA, will use the `unpairedMsa`
+    as is and run `pairedMSA`-free.
+3.  The `pairedMsa` is set to to a non-empty A3M string, `unpairedMsa` set to an
+    empty string (`""`). AlphaFold 3 won't build MSA, will use the `pairedMsa`
+    and run `unpairedMSA`-free. **This option is not recommended**, see
+    [MSA Pairing](#msa-pairing) below.
+4.  Both `unpairedMsa` and `pairedMsa` fields are set to an empty string (`""`).
+    AlphaFold 3 will not build the MSA and the MSA input to the model will be
+    just the query sequence (equivalent to running completely MSA-free).
+5.  Both `unpairedMsa` and `pairedMsa` fields are set to a custom non-empty A3M
+    string, AlphaFold 3 will use the provided MSA instead of building one as
+    part of the data pipeline. This is considered an expert option.
+
+Note that both `unpairedMsa` and `unpairedMsa` have to either be *both* set
+(i.e. non-`null`), or both unset (i.e. both `null`, explicitly or implicitly).
+Typically, when setting `unpairedMsa`, you will set the `pairedMsa` to an empty
+string (`""`). For example this will run the protein chain A with the given MSA,
+but without any templates (template-free):
 
 ```json
 {
@@ -350,7 +375,7 @@ MSA, but without any templates:
 
 When setting your own MSA, you have to make sure that:
 
-1.  The MSA is a valid A3M file. This means adhering to the FASTA format while
+1.  The MSA is in the A3M format. This means adhering to the FASTA format while
     also allowing lowercase characters denoting inserted residues and hyphens
     (`-`) denoting gaps in sequences.
 2.  The first sequence is exactly equal to the query sequence.
@@ -447,6 +472,58 @@ you would specify the two indices lists as:
 You can provide multiple structural templates. Note that if an mmCIF containing
 more than one chain is provided, you will get an error since it is not possible
 to determine which of the chains should be used as the template.
+
+You can run template-free (but still run genetic search and build MSA) by
+setting templates to `[]` and either explicitly setting both `unpairedMsa` and
+`pairedMsa` to `null`:
+
+```json
+"protein": {
+  "id": "A",
+  "sequence": ...,
+  "pairedMsa": null,
+  "unpairedMsa": null,
+  "templates": []
+}
+```
+
+Or you can simply fully omit them:
+
+```json
+"protein": {
+  "id": "A",
+  "sequence": ...,
+  "templates": []
+}
+```
+
+You can also run with pre-computed MSA, but let AlphaFold 3 search for
+templates. This can be achieved by setting `unpairedMsa` and `pairedMsa`, but
+keeping templates unset (or set to `null`). The profile given as an input to
+Hmmsearch when searching for templates will be built from the provided
+`unpairedMsa`:
+
+```json
+"protein": {
+  "id": "A",
+  "sequence": ...,
+  "unpairedMsa": ...,
+  "pairedMsa": ...,
+  "templates": null
+}
+```
+
+Or you can simply fully omit the `templates` field thus setting it implicitly to
+`null`:
+
+```json
+"protein": {
+  "id": "A",
+  "sequence": ...,
+  "unpairedMsa": ...,
+  "pairedMsa": ...,
+}
+```
 
 ## Bonds
 

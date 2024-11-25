@@ -22,6 +22,7 @@ https://github.com/google-deepmind/alphafold3/blob/main/WEIGHTS_TERMS_OF_USE.md
 from collections.abc import Callable, Iterable, Sequence
 import csv
 import dataclasses
+import datetime
 import functools
 import multiprocessing
 import os
@@ -76,25 +77,10 @@ _OUTPUT_DIR = flags.DEFINE_string(
     None,
     'Path to a directory where the results will be saved.',
 )
-
 MODEL_DIR = flags.DEFINE_string(
     'model_dir',
     _DEFAULT_MODEL_DIR.as_posix(),
     'Path to the model to use for inference.',
-)
-
-_FLASH_ATTENTION_IMPLEMENTATION = flags.DEFINE_enum(
-    'flash_attention_implementation',
-    default='triton',
-    enum_values=['triton', 'cudnn', 'xla'],
-    help=(
-        "Flash attention implementation to use. 'triton' and 'cudnn' uses a"
-        ' Triton and cuDNN flash attention implementation, respectively. The'
-        ' Triton kernel is fastest and has been tested more thoroughly. The'
-        " Triton and cuDNN kernels require Ampere GPUs or later. 'xla' uses an"
-        ' XLA attention implementation (no flash attention) and is portable'
-        ' across GPU devices.'
-    ),
 )
 
 # Control which stages to run.
@@ -210,14 +196,20 @@ _NHMMER_N_CPU = flags.DEFINE_integer(
     ' beyond 8 CPUs provides very little additional speedup.',
 )
 
-# Compilation cache.
+# Template search configuration.
+_MAX_TEMPLATE_DATE = flags.DEFINE_string(
+    'max_template_date',
+    '2021-09-30',  # By default, use the date from the AlphaFold 3 paper.
+    'Maximum template release date to consider. Format: YYYY-MM-DD. All '
+    'templates released after this date will be ignored.',
+)
+
+# JAX inference performance tuning.
 _JAX_COMPILATION_CACHE_DIR = flags.DEFINE_string(
     'jax_compilation_cache_dir',
     None,
     'Path to a directory for the JAX compilation cache.',
 )
-
-# Compilation buckets.
 _BUCKETS = flags.DEFINE_list(
     'buckets',
     # pyformat: disable
@@ -227,6 +219,19 @@ _BUCKETS = flags.DEFINE_list(
     'Strictly increasing order of token sizes for which to cache compilations.'
     ' For any input with more tokens than the largest bucket size, a new bucket'
     ' is created for exactly that number of tokens.',
+)
+_FLASH_ATTENTION_IMPLEMENTATION = flags.DEFINE_enum(
+    'flash_attention_implementation',
+    default='triton',
+    enum_values=['triton', 'cudnn', 'xla'],
+    help=(
+        "Flash attention implementation to use. 'triton' and 'cudnn' uses a"
+        ' Triton and cuDNN flash attention implementation, respectively. The'
+        ' Triton kernel is fastest and has been tested more thoroughly. The'
+        " Triton and cuDNN kernels require Ampere GPUs or later. 'xla' uses an"
+        ' XLA attention implementation (no flash attention) and is portable'
+        ' across GPU devices.'
+    ),
 )
 
 
@@ -655,6 +660,7 @@ def main(_):
 
   if _RUN_DATA_PIPELINE.value:
     expand_path = lambda x: replace_db_dir(x, DB_DIR.value)
+    max_template_date = datetime.date.fromisoformat(_MAX_TEMPLATE_DATE.value)
     data_pipeline_config = pipeline.DataPipelineConfig(
         jackhmmer_binary_path=_JACKHMMER_BINARY_PATH.value,
         nhmmer_binary_path=_NHMMER_BINARY_PATH.value,
@@ -674,6 +680,7 @@ def main(_):
         seqres_database_path=expand_path(_SEQRES_DATABASE_PATH.value),
         jackhmmer_n_cpu=_JACKHMMER_N_CPU.value,
         nhmmer_n_cpu=_NHMMER_N_CPU.value,
+        max_template_date=max_template_date,
     )
   else:
     print('Skipping running the data pipeline.')

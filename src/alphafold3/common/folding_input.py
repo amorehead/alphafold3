@@ -878,10 +878,12 @@ class Input:
           )
 
     bonded_atom_pairs = []
+    chain_ids = set(c.id for c in chains)
     for atom_a, atom_b, _ in struc.iter_bonds():
-      beg = (atom_a['chain_id'], int(atom_a['res_id']), atom_a['atom_name'])
-      end = (atom_b['chain_id'], int(atom_b['res_id']), atom_b['atom_name'])
-      bonded_atom_pairs.append((beg, end))
+      if atom_a['chain_id'] in chain_ids and atom_b['chain_id'] in chain_ids:
+        beg = (atom_a['chain_id'], int(atom_a['res_id']), atom_a['atom_name'])
+        end = (atom_b['chain_id'], int(atom_b['res_id']), atom_b['atom_name'])
+        bonded_atom_pairs.append((beg, end))
 
     return cls(
         name=struc.name,

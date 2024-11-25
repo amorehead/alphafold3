@@ -12,6 +12,7 @@
 
 import contextlib
 import csv
+import datetime
 import difflib
 import functools
 import hashlib
@@ -160,6 +161,7 @@ class InferenceTest(test_utils.StructureTestCase):
         rna_central_database_path=rna_central_database_path,
         pdb_database_path=pdb_database_path,
         seqres_database_path=seqres_database_path,
+        max_template_date=datetime.date(2021, 9, 30),
     )
     test_input = {
         'name': '5tgy',
