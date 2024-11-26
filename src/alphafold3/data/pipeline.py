@@ -435,11 +435,15 @@ class DataPipeline:
       ]
     elif has_unpaired_msa and has_paired_msa and not has_templates:
       # Has MSA, but doesn't have templates. Search for templates only.
-      unpaired_msa = chain.unpaired_msa
-      paired_msa = chain.paired_msa
+      empty_msa = msa.Msa.from_empty(
+          query_sequence=chain.sequence,
+          chain_poly_type=mmcif_names.PROTEIN_CHAIN,
+      ).to_a3m()
+      unpaired_msa = chain.unpaired_msa or empty_msa
+      paired_msa = chain.paired_msa or empty_msa
       template_hits = _get_protein_templates(
           sequence=chain.sequence,
-          input_msa_a3m=chain.unpaired_msa,
+          input_msa_a3m=unpaired_msa,
           run_template_search=True,
           templates_config=self._templates_config,
           pdb_database_path=self._pdb_database_path,

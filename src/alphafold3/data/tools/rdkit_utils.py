@@ -326,8 +326,13 @@ def mol_to_ccd_cif(
         bond.GetEndAtom().GetProp('atom_name')
     )
     try:
+      bond_type = bond.GetBondType()
+      # Older versions of RDKit did not have a DATIVE bond type. Convert it to
+      # SINGLE to match the AF3 training setup.
+      if bond_type == rd_chem.BondType.DATIVE:
+        bond_type = rd_chem.BondType.SINGLE
       mol_cif['_chem_comp_bond.value_order'].append(
-          _RDKIT_BOND_TYPE_TO_MMCIF[bond.GetBondType()]
+          _RDKIT_BOND_TYPE_TO_MMCIF[bond_type]
       )
       mol_cif['_chem_comp_bond.pdbx_stereo_config'].append(
           _RDKIT_BOND_STEREO_TO_MMCIF[bond.GetStereo()]
