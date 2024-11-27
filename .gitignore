@@ -1,6 +1,6 @@
-data/
-models/
-scripts/
+alphafold3_data/
+alphafold3_models/
+alphafold3_scripts/
 *data_inference*.sh
 *alphafold3_docker*.tar
 *alphafold3*.sif
