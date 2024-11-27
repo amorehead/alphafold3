@@ -629,7 +629,7 @@ def main(_):
     fold_inputs = [
         fold_input for fold_input in fold_inputs
         if not os.path.exists(
-            os.path.join(_OUTPUT_DIR.value, fold_input.sanitised_name())
+          os.path.join(_OUTPUT_DIR.value, fold_input.sanitised_name(), f"{fold_input.sanitised_name()}_model.cif")
         )
     ]
 
