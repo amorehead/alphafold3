@@ -145,7 +145,7 @@ AlphaFold 3 uses the following separate libraries and packages:
 *   [DSSP](https://github.com/PDB-REDO/dssp)
 *   [HMMER Suite](https://github.com/EddyRivasLab/hmmer)
 *   [Haiku](https://github.com/deepmind/dm-haiku)
-*   [JAX](https://github.com/google/jax/)
+*   [JAX](https://github.com/jax-ml/jax/)
 *   [jax-triton](https://github.com/jax-ml/jax-triton)
 *   [jaxtyping](https://github.com/patrick-kidger/jaxtyping)
 *   [libcifpp](https://github.com/pdb-redo/libcifpp)
