@@ -737,14 +737,17 @@ def main(_):
   num_fold_inputs = 0
   for fold_input in fold_inputs:
     print(f'Processing fold input #{num_fold_inputs + 1}')
-    process_fold_input(
-        fold_input=fold_input,
-        data_pipeline_config=data_pipeline_config,
-        model_runner=model_runner,
-        output_dir=os.path.join(_OUTPUT_DIR.value, fold_input.sanitised_name()),
-        buckets=tuple(int(bucket) for bucket in _BUCKETS.value),
-    )
-    num_fold_inputs += 1
+    try:
+      process_fold_input(
+          fold_input=fold_input,
+          data_pipeline_config=data_pipeline_config,
+          model_runner=model_runner,
+          output_dir=os.path.join(_OUTPUT_DIR.value, fold_input.sanitised_name()),
+          buckets=tuple(int(bucket) for bucket in _BUCKETS.value),
+      )
+      num_fold_inputs += 1
+    except Exception as e:
+      print(f'Error processing fold input {fold_input.name}: {e}. Skipping this fold input.')
 
   print(f'Done processing {num_fold_inputs} fold inputs.')
 
