@@ -98,13 +98,26 @@ AlphaFold 3 can run on inputs of size up to 4,352 tokens on a single NVIDIA A100
 While numerically accurate, this configuration will have lower throughput
 compared to the set up on the NVIDIA A100 (80 GB), due to less available memory.
 
-#### Devices other than NVIDIA A100 or H100
+#### NVIDIA P100
 
-There are currently known unresolved numerical issues with using devices other
-than NVIDIA A100 and H100. For now, accuracy has only been validated for A100
-and H100 GPU device types. See
+AlphaFold 3 can run on inputs of size up to 1,024 tokens on a single NVIDIA P100
+with no configuration changes needed.
+
+#### NVIDIA V100
+
+There are known issues with V100 devices. See
 [this Issue](https://github.com/google-deepmind/alphafold3/issues/59) for
 tracking.
+
+#### Other devices
+
+There are known issues with CUDA Capability 7.x devices. See
+[this Issue](https://github.com/google-deepmind/alphafold3/issues/59) for
+tracking.
+
+CUDA Capability 6.x and 8.x devices other than those listed explicitly here are
+believed to work for AlphaFold 3, but large-scale testing has only been
+performed for the devices mentioned above.
 
 ## Compilation Buckets
 

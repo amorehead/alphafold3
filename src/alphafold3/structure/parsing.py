@@ -40,6 +40,10 @@ BondAtomId: TypeAlias = tuple[ChainIndex, ResIndex, AtomName]
 _INSERTION_CODE_REMAP: Mapping[str, str] = {'.': '?'}
 
 
+class NoAtomsError(Exception):
+  """Raise when the mmCIF does not have any atoms."""
+
+
 @dataclasses.dataclass(frozen=True, slots=True, kw_only=True)
 class BondIndices:
   from_indices: list[int]
@@ -177,7 +181,13 @@ def _get_str_model_id(
       # breaks when adhoc importing.
       match model_id.value:
         case ModelID.FIRST.value:
-          str_model_id = _get_first_model_id(cif)
+          try:
+            str_model_id = _get_first_model_id(cif)
+          except IndexError as e:
+            raise NoAtomsError(
+                'The mmCIF does not have any atoms or'
+                ' _atom_site.pdbx_PDB_model_num is missing.'
+            ) from e
         case ModelID.ALL.value:
           str_model_id = ''
         case _:
@@ -261,7 +271,8 @@ def _get_mmcif_header(
     fix_unknown_dna: bool,
 ) -> _MmcifHeader:
   """Extract header fields from an mmCIF object."""
-  name = cif.get_data_name()
+  entry_id = cif.get('_entry.id')
+  name = entry_id[0] if entry_id else cif.get_data_name()
   resolution = mmcif.get_resolution(cif)
 
   release_date = mmcif.get_release_date(cif)
@@ -356,11 +367,10 @@ def from_parsed_mmcif(
       model_id=str_model_id,
   )
 
-  if include_bonds:
+  if include_bonds and atoms.size > 0:
     # NB: parsing the atom table before the bonds table allows for a more
     # informative error message when dealing with bad multi-model mmCIFs.
-    # We also ensure that we always use a specific model ID, even when parsing
-    # all models.
+    # Also always use a specific model ID, even when parsing all models.
     if str_model_id == '':  # pylint: disable=g-explicit-bool-comparison
       bonds_model_id = _get_first_model_id(mmcif_object)
     else:
@@ -519,7 +529,7 @@ def from_res_arrays(atom_mask: np.ndarray, **kwargs) -> structure.Structure:
 
   chain_entity_id = fields.get('chain_entity_id')
   if chain_entity_id is not None:
-    entity_id = chain_entity_id[chain_entity_id]
+    entity_id = chain_entity_id[chain_start]
   else:
     entity_id = np.array(
         [str(mmcif.str_id_to_int_id(cid)) for cid in chain_id[chain_start]],

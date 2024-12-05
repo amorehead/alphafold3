@@ -25,6 +25,7 @@ from alphafold3.structure.parsing import from_parsed_mmcif
 from alphafold3.structure.parsing import from_res_arrays
 from alphafold3.structure.parsing import from_sequences_and_bonds
 from alphafold3.structure.parsing import ModelID
+from alphafold3.structure.parsing import NoAtomsError
 from alphafold3.structure.parsing import SequenceFormat
 from alphafold3.structure.structure import ARRAY_FIELDS
 from alphafold3.structure.structure import AuthorNamingScheme

@@ -116,7 +116,7 @@ The top-level structure of the input JSON is:
   "bondedAtomPairs": [...],  # Optional
   "userCCD": "...",  # Optional
   "dialect": "alphafold3",  # Required
-  "version": 1  # Required
+  "version": 2  # Required
 }
 ```
 
@@ -144,9 +144,19 @@ The fields specify the following:
     `alphafold3`. See
     [AlphaFold Server JSON Compatibility](#alphafold-server-json-compatibility)
     for more information.
-*   `version: int`: The version of the input JSON. This must be set to 1. See
+*   `version: int`: The version of the input JSON. This must be set to 1 or 2.
+    See
     [AlphaFold Server JSON Compatibility](#alphafold-server-json-compatibility)
-    for more information.
+    and [versions](#versions) below for more information.
+
+## Versions
+
+The top-level `version` field (for the `alphafold3` dialect) can be either `1`
+or `2`. The following features have been added in respective versions:
+
+*   `1`: the initial AlphaFold 3 input format.
+*   `2`: added the option of specifying external MSA and templates using newly
+    added fields `unpairedMsaPath`, `pairedMsaPath`, and `mmcifPath`.
 
 ## Sequences
 
@@ -167,8 +177,10 @@ Specifies a single protein chain.
       {"ptmType": "HY3", "ptmPosition": 1},
       {"ptmType": "P1L", "ptmPosition": 5}
     ],
-    "unpairedMsa": ...,
-    "pairedMsa": ...,
+    "unpairedMsa": ...,  # Mutually exclusive with unpairedMsaPath.
+    "unpairedMsaPath": ...,  # Mutually exclusive with unpairedMsa.
+    "pairedMsa": ...,  # Mutually exclusive with pairedMsaPath.
+    "pairedMsaPath": ...,  # Mutually exclusive with pairedMsa.
     "templates": [...]
   }
 }
@@ -190,8 +202,18 @@ The fields specify the following:
     This is specified using the A3M format (equivalent to the FASTA format, but
     also allows gaps denoted by the hyphen `-` character). See more details
     below.
+*   `unpairedMsaPath: str`: An optional path to a file that contains the
+    multiple sequence alignment for this chain instead of providing it inline
+    using the `unpairedMsa` field. The path can be either absolute, or relative
+    to the input JSON path. The file must be in the A3M format, and could be
+    either plain text, or compressed using gzip, xz, or zstd.
 *   `pairedMsa: str`: We recommend *not* using this optional field and using the
     `unpairedMsa` for the purposes of pairing. See more details below.
+*   `pairedMsaPath: str`: An optional path to a file that contains the multiple
+    sequence alignment for this chain instead of providing it inline using the
+    `pairedMsa` field. The path can be either absolute, or relative to the input
+    JSON path. The file must be in the A3M format, and could be either plain
+    text, or compressed using gzip, xz, or zstd.
 *   `templates: list[Template]`: An optional list of structural templates. See
     more details below.
 
@@ -208,7 +230,8 @@ Specifies a single RNA chain.
       {"modificationType": "2MG", "basePosition": 1},
       {"modificationType": "5MC", "basePosition": 4}
     ],
-    "unpairedMsa": ...
+    "unpairedMsa": ...,  # Mutually exclusive with unpairedMsaPath.
+    "unpairedMsaPath": ...  # Mutually exclusive with unpairedMsa.
   }
 }
 ```
@@ -225,6 +248,11 @@ The fields specify the following:
     Each modification is specified using its CCD code and 1-based base position.
 *   `unpairedMsa: str`: An optional multiple sequence alignment for this chain.
     This is specified using the A3M format. See more details below.
+*   `unpairedMsaPath: str`: An optional path to a file that contains the
+    multiple sequence alignment for this chain instead of providing it inline
+    using the `unpairedMsa` field. The path can be either absolute, or relative
+    to the input JSON path. The file must be in the A3M format, and could be
+    either plain text, or compressed using gzip, xz, or zstd.
 
 ### DNA
 
@@ -403,8 +431,8 @@ method gives exact control over the placement of each sequence in the MSA, as
 opposed to relying on name-matching post-processing heuristics used for
 `pairedMsa`.
 
-When setting `unpairedMsa` manually, the `pairedMsa` must be left unset (i.e.
-the `pairedMsa` key should not be present in the JSON).
+When setting `unpairedMsa` manually, the `pairedMsa` must be explicitly set to
+an empty string (`""`).
 
 For instance, if there are two chains `DEEP` and `MIND` which we want to be
 paired on organism A and C, we can achieve it as follows:
@@ -451,12 +479,27 @@ Structural templates can be specified only for protein chains:
 ```json
 "templates": [
   {
-    "mmcif": ...,
+    "mmcif": ...,  # Mutually exclusive with mmcifPath.
+    "mmcifPath": ...,  # Mutually exclusive with mmcif.
     "queryIndices": [0, 1, 2, 4, 5, 6],
     "templateIndices": [0, 1, 2, 3, 4, 8]
   }
 ]
 ```
+
+The fields specify the following:
+
+*   `mmcif: str`: A string containing the single chain protein structural
+    template in the mmCIF format.
+*   `mmcifPath: str`: An optional path to a file that contains the mmCIF with
+    the structural template instead of providing it inline using the `mmcifPath`
+    field. The path can be either absolute, or relative to the input JSON path.
+    The file must be in the A3M format, and could be either plain text, or
+    compressed using gzip, xz, or zstd.
+*   `queryIndices: list[int]`: O-based indices in the query sequence, defining
+    the mapping from query residues to template residues.
+*   `templateIndices: list[int]`: O-based indices in the template sequence,
+    defining the mapping from query residues to template residues.
 
 A template is specified as an mmCIF string containing a single chain with the
 structural template together with a 0-based mapping that maps query residue
@@ -794,7 +837,7 @@ certain fields and the sequences are not biologically meaningful.
   ],
   "userCCD": ...,
   "dialect": "alphafold3",
-  "version": 1
+  "version": 2
 }
 
 ```

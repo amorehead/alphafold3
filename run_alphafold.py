@@ -233,6 +233,11 @@ _FLASH_ATTENTION_IMPLEMENTATION = flags.DEFINE_enum(
         ' across GPU devices.'
     ),
 )
+_NUM_DIFFUSION_SAMPLES = flags.DEFINE_integer(
+    'num_diffusion_samples',
+    5,
+    'Number of diffusion samples to generate.',
+)
 
 
 class ConfigurableModel(Protocol):
@@ -261,12 +266,16 @@ def make_model_config(
     *,
     model_class: type[ModelT] = diffusion_model.Diffuser,
     flash_attention_implementation: attention.Implementation = 'triton',
+    num_diffusion_samples: int = 5,
 ):
+  """Returns a model config with some defaults overridden."""
   config = model_class.Config()
   if hasattr(config, 'global_config'):
     config.global_config.flash_attention_implementation = (
         flash_attention_implementation
     )
+  if hasattr(config, 'heads'):
+    config.heads.diffusion.eval.num_samples = num_diffusion_samples
   return config
 
 
@@ -647,13 +656,21 @@ def main(_):
   if _RUN_INFERENCE.value:
     # Fail early on incompatible devices, but only if we're running inference.
     gpu_devices = jax.local_devices(backend='gpu')
-    if gpu_devices and float(gpu_devices[0].compute_capability) < 8.0:
-      raise ValueError(
-          'There are currently known unresolved numerical issues with using'
-          ' devices with compute capability less than 8.0. See '
-          ' https://github.com/google-deepmind/alphafold3/issues/59 for'
-          ' tracking.'
-      )
+    if gpu_devices:
+      compute_capability = float(gpu_devices[0].compute_capability)
+      if compute_capability < 6.0:
+        raise ValueError(
+            'AlphaFold 3 requires at least GPU compute capability 6.0 (see'
+            ' https://developer.nvidia.com/cuda-gpus).'
+        )
+      elif 7.0 <= compute_capability < 8.0:
+        raise ValueError(
+            'There are currently known unresolved numerical issues with using'
+            ' devices with GPU compute capability 7.x (see'
+            ' https://developer.nvidia.com/cuda-gpus). Follow '
+            ' https://github.com/google-deepmind/alphafold3/issues/59 for'
+            ' tracking.'
+        )
 
   notice = textwrap.wrap(
       'Running AlphaFold 3. Please note that standard AlphaFold 3 model'
@@ -706,7 +723,8 @@ def main(_):
         config=make_model_config(
             flash_attention_implementation=typing.cast(
                 attention.Implementation, _FLASH_ATTENTION_IMPLEMENTATION.value
-            )
+            ),
+            num_diffusion_samples=_NUM_DIFFUSION_SAMPLES.value,
         ),
         device=devices[0],
         model_dir=pathlib.Path(MODEL_DIR.value),
@@ -715,8 +733,10 @@ def main(_):
     print('Skipping running model inference.')
     model_runner = None
 
-  print(f'Processing {len(fold_inputs)} fold inputs.')
+  print('Processing fold inputs.')
+  num_fold_inputs = 0
   for fold_input in fold_inputs:
+    print(f'Processing fold input #{num_fold_inputs + 1}')
     process_fold_input(
         fold_input=fold_input,
         data_pipeline_config=data_pipeline_config,
@@ -724,8 +744,9 @@ def main(_):
         output_dir=os.path.join(_OUTPUT_DIR.value, fold_input.sanitised_name()),
         buckets=tuple(int(bucket) for bucket in _BUCKETS.value),
     )
+    num_fold_inputs += 1
 
-  print(f'Done processing {len(fold_inputs)} fold inputs.')
+  print(f'Done processing {num_fold_inputs} fold inputs.')
 
 
 if __name__ == '__main__':

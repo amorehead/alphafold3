@@ -484,13 +484,13 @@ def assign_atom_names_from_graph(
   keep_existing_names is True we keep the original name.
 
   We traverse the graph in the order of the rdkit atom index and give each atom
-  a name equal to '{ELEMENT_TYPE}_{INDEX}'. E.g. C5 is the name for the fifth
+  a name equal to '{ELEMENT_TYPE}{INDEX}'. E.g. C5 is the name for the fifth
   unnamed carbon encountered.
 
   NOTE: A new mol is returned, the original is not changed in place.
 
   Args:
-    mol:
+    mol: Mol object.
     keep_existing_names: If True, atoms that already have the atom_name property
       will keep their assigned names.
 
@@ -511,7 +511,9 @@ def assign_atom_names_from_graph(
       element = atom.GetSymbol()
       while True:
         element_counts[element] += 1
-        new_name = f'{element}{element_counts[element]}'
+        # Standardize names by using uppercase element type, as in CCD. Only
+        # effects elements with more than one letter, e.g. 'Cl' becomes 'CL'.
+        new_name = f'{element.upper()}{element_counts[element]}'
         if new_name not in specified_atom_names:
           break
       atom.SetProp('atom_name', new_name)

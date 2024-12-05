@@ -27,7 +27,8 @@ readonly SOURCE=https://storage.googleapis.com/alphafold-databases/v3.0
 echo "Start Fetching and Untarring 'pdb_2022_09_28_mmcif_files.tar'"
 wget --quiet --output-document=- \
     "${SOURCE}/pdb_2022_09_28_mmcif_files.tar.zst" | \
-    tar --use-compress-program=zstd -xf - --directory="${db_dir}" &
+    tar --no-same-owner --no-same-permissions \
+    --use-compress-program=zstd -xf - --directory="${db_dir}" &
 
 for NAME in mgy_clusters_2022_05.fa \
             bfd-first_non_consensus_sequences.fasta \

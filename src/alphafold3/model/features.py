@@ -1505,8 +1505,8 @@ def get_reference(
     # V3 is the latest and supports macrocycles .
     params = AllChem.ETKDGv3()
     params.randomSeed = int(random_state.randint(1, 1 << 31))
-    AllChem.EmbedMolecule(m, params)
-    conformer = m.GetConformer()
+    conformer_id = AllChem.EmbedMolecule(m, params)
+    conformer = m.GetConformer(conformer_id)
     for i, atom in enumerate(m.GetAtoms()):
       elements.append(atom.GetAtomicNum())
       charges.append(atom.GetFormalCharge())

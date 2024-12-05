@@ -17,7 +17,8 @@ should aid others with different setups. If you are installing locally outside
 of a Docker container, please ensure CUDA, cuDNN, and JAX are correctly
 installed; the
 [JAX installation documentation](https://jax.readthedocs.io/en/latest/installation.html#nvidia-gpu)
-is a useful reference for this case.
+is a useful reference for this case. Please note that the Docker container
+requires that the host machine has CUDA 12.6 installed.
 
 The instructions provided below describe how to:
 

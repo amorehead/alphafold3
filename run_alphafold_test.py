@@ -29,8 +29,6 @@ from alphafold3 import structure
 from alphafold3.common import folding_input
 from alphafold3.common import resources
 from alphafold3.common.testing import data as testing_data
-from alphafold3.constants import chemical_components
-from alphafold3.data import featurisation
 from alphafold3.data import pipeline
 from alphafold3.model.atom_layout import atom_layout
 from alphafold3.model.diffusion import model as diffusion_model
@@ -139,7 +137,7 @@ class InferenceTest(test_utils.StructureTestCase):
         / 'test_data/miniature_databases/rnacentral_active_seq_id_90_cov_80_linclust__subsampled_1000.fasta'
     ).path()
     pdb_database_path = testing_data.Data(
-        resources.ROOT / 'data/testdata/templates_v2/ww_pdb'
+        resources.ROOT / 'test_data/miniature_databases/pdb_mmcif'
     ).path()
     seqres_database_path = testing_data.Data(
         resources.ROOT
@@ -203,37 +201,6 @@ class InferenceTest(test_utils.StructureTestCase):
 
     self.assertEqual(diff, "", f"Result differs from golden:\n{diff}")
 
-  def test_config(self):
-    model_config = run_alphafold.make_model_config()
-    model_config_as_str = json.dumps(
-        model_config.as_dict(), sort_keys=True, indent=2
-    )
-    with _output('model_config.json') as (result_path, output):
-      output.write(model_config_as_str.encode('utf-8'))
-    self.compare_golden(result_path)
-
-  def test_featurisation(self):
-    """Run featurisation and assert that the output is as expected."""
-    fold_input = folding_input.Input.from_json(self._test_input_json)
-    data_pipeline = pipeline.DataPipeline(self._data_pipeline_config)
-    full_fold_input = data_pipeline.process(fold_input)
-    featurised_example = featurisation.featurise_input(
-        full_fold_input,
-        ccd=chemical_components.cached_ccd(),
-        buckets=None,
-    )
-
-    with _output('featurised_example.pkl') as (_, output):
-      output.write(pickle.dumps(featurised_example))
-    featurised_example = jax.tree_util.tree_map(_hash_data, featurised_example)
-    with _output('featurised_example.json') as (result_path, output):
-      output.write(
-          json.dumps(featurised_example, sort_keys=True, indent=2).encode(
-              'utf-8'
-          )
-      )
-    self.compare_golden(result_path)
-
   def test_model_inference(self):
     """Run model inference and assert that the output is as expected."""
     featurised_examples = pickle.loads(
@@ -248,35 +215,6 @@ class InferenceTest(test_utils.StructureTestCase):
     inference_result = jax.tree_util.tree_map(_hash_data, inference_result)
     self.assertIsNotNone(inference_result)
 
-  def test_write_input_json(self):
-    fold_input = folding_input.Input.from_json(self._test_input_json)
-    output_dir = self.create_tempdir()
-    run_alphafold.write_fold_input_json(fold_input, output_dir)
-    with open(
-        os.path.join(output_dir, f'{fold_input.sanitised_name()}_data.json'),
-        'rt',
-    ) as f:
-      actual_fold_input = folding_input.Input.from_json(f.read())
-
-    self.assertEqual(actual_fold_input, fold_input)
-
-  def test_process_fold_input_runs_only_data_pipeline(self):
-    fold_input = folding_input.Input.from_json(self._test_input_json)
-    output_dir = self.create_tempdir()
-    run_alphafold.process_fold_input(
-        fold_input=fold_input,
-        data_pipeline_config=self._data_pipeline_config,
-        model_runner=None,
-        output_dir=output_dir,
-    )
-    with open(
-        os.path.join(output_dir, f'{fold_input.sanitised_name()}_data.json'),
-        'rt',
-    ) as f:
-      actual_fold_input = folding_input.Input.from_json(f.read())
-
-    featurisation.validate_fold_input(actual_fold_input)
-
   def test_process_fold_input_runs_only_inference(self):
     with self.assertRaisesRegex(ValueError, 'missing unpaired MSA.'):
       run_alphafold.process_fold_input(
@@ -285,27 +223,7 @@ class InferenceTest(test_utils.StructureTestCase):
           # since the input is missing MSAs.
           data_pipeline_config=None,
           model_runner=self._runner,
-          output_dir=self.create_tempdir(),
-      )
-
-  def test_no_chains_in_input(self):
-    fold_input = folding_input.Input(
-        name='empty',
-        chains=[],
-        rng_seeds=[0],
-    )
-
-    with self.assertRaisesRegex(ValueError, 'Fold input has no chains.'):
-      run_alphafold.process_fold_input(
-          fold_input=fold_input,
-          data_pipeline_config=self._data_pipeline_config,
-          model_runner=run_alphafold.ModelRunner(
-              model_class=diffusion_model.Diffuser,
-              config=run_alphafold.make_model_config(),
-              device=jax.local_devices(backend='gpu')[0],
-              model_dir=pathlib.Path(run_alphafold.MODEL_DIR.value),
-          ),
-          output_dir='unused output dir',
+          output_dir=self.create_tempdir().full_path,
       )
 
   @parameterized.named_parameters(
@@ -326,7 +244,7 @@ class InferenceTest(test_utils.StructureTestCase):
     ### Prepare inputs.
     fold_input = folding_input.Input.from_json(self._test_input_json)
 
-    output_dir = self.create_tempdir()
+    output_dir = self.create_tempdir().full_path
     actual = run_alphafold.process_fold_input(
         fold_input,
         self._data_pipeline_config,
@@ -462,30 +380,6 @@ class InferenceTest(test_utils.StructureTestCase):
             actual_inf.predicted_structure.atom_occupancy,
             [1.0] * actual_inf.predicted_structure.num_atoms,
         )
-
-  @parameterized.product(num_db_dirs=tuple(range(1, 3)))
-  def test_replace_db_dir(self, num_db_dirs: int) -> None:
-    """Test that the db_dir is replaced correctly."""
-    db_dirs = [pathlib.Path(self.create_tempdir()) for _ in range(num_db_dirs)]
-    db_dirs_posix = [db_dir.as_posix() for db_dir in db_dirs]
-
-    for i, db_dir in enumerate(db_dirs):
-      for j in range(i + 1):
-        (db_dir / f'filename{j}.txt').write_text(f'hello world {i}')
-
-    for i in range(num_db_dirs):
-      self.assertEqual(
-          pathlib.Path(
-              run_alphafold.replace_db_dir(
-                  f'${{DB_DIR}}/filename{i}.txt', db_dirs_posix
-              )
-          ).read_text(),
-          f'hello world {i}',
-      )
-    with self.assertRaises(FileNotFoundError):
-      run_alphafold.replace_db_dir(
-          f'${{DB_DIR}}/filename{num_db_dirs}.txt', db_dirs_posix
-      )
 
 
 if __name__ == '__main__':

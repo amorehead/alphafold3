@@ -10,15 +10,17 @@
 
 """Model input dataclass."""
 
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Collection, Iterator, Mapping, Sequence
 import dataclasses
+import gzip
 import json
 import logging
+import lzma
 import pathlib
 import random
 import re
 import string
-from typing import Any, Final, Self, TypeAlias
+from typing import Any, Final, Self, TypeAlias, cast
 
 from alphafold3 import structure
 from alphafold3.constants import chemical_components
@@ -26,12 +28,14 @@ from alphafold3.constants import mmcif_names
 from alphafold3.constants import residue_names
 from alphafold3.structure import mmcif as mmcif_lib
 import rdkit.Chem as rd_chem
+import zstandard as zstd
 
 
 BondAtomId: TypeAlias = tuple[str, int, str]
 
 JSON_DIALECT: Final[str] = 'alphafold3'
-JSON_VERSION: Final[int] = 1
+JSON_VERSIONS: Final[tuple[int, ...]] = (1, 2)
+JSON_VERSION: Final[int] = JSON_VERSIONS[-1]
 
 ALPHAFOLDSERVER_JSON_DIALECT: Final[str] = 'alphafoldserver'
 ALPHAFOLDSERVER_JSON_VERSION: Final[int] = 1
@@ -41,6 +45,40 @@ def _validate_keys(actual: Collection[str], expected: Collection[str]):
   """Validates that the JSON doesn't contain any extra unwanted keys."""
   if bad_keys := set(actual) - set(expected):
     raise ValueError(f'Unexpected JSON keys in: {", ".join(sorted(bad_keys))}')
+
+
+def _read_file(path: pathlib.Path, json_path: pathlib.Path | None) -> str:
+  """Reads a maybe compressed (gzip, xz, zstd) file from the given path.
+
+  Args:
+    path: The path to the file to read. This can be either absolute path, or a
+      path relative to the JSON file path.
+    json_path: The path to the JSON file. If None, the path must be absolute.
+
+  Returns:
+    The contents of the file.
+  """
+  if not path.is_absolute():
+    if json_path is None:
+      raise ValueError('json_path must be specified if path is not absolute.')
+    path = (json_path.parent / path).resolve()
+
+  with open(path, 'rb') as f:
+    first_six_bytes = f.read(6)
+    f.seek(0)
+
+    # Detect the compression type using the magic number in the header.
+    if first_six_bytes[:2] == b'\x1f\x8b':
+      with gzip.open(f, 'rt') as gzip_f:
+        return cast(str, gzip_f.read())
+    elif first_six_bytes == b'\xfd\x37\x7a\x58\x5a\x00':
+      with lzma.open(f, 'rt') as xz_f:
+        return cast(str, xz_f.read())
+    elif first_six_bytes[:4] == b'\x28\xb5\x2f\xfd':
+      with zstd.open(f, 'rt') as zstd_f:
+        return cast(str, zstd_f.read())
+    else:
+      return f.read().decode('utf-8')
 
 
 class Template:
@@ -150,7 +188,10 @@ class ProteinChain:
 
   @classmethod
   def from_dict(
-      cls, json_dict: Mapping[str, Any], seq_id: str | None = None
+      cls,
+      json_dict: Mapping[str, Any],
+      json_path: pathlib.Path | None = None,
+      seq_id: str | None = None,
   ) -> Self:
     """Constructs ProteinChain from the AlphaFold JSON dict."""
     json_dict = json_dict['protein']
@@ -161,7 +202,9 @@ class ProteinChain:
             'sequence',
             'modifications',
             'unpairedMsa',
+            'unpairedMsaPath',
             'pairedMsa',
+            'pairedMsaPath',
             'templates',
         },
     )
@@ -173,22 +216,38 @@ class ProteinChain:
     ]
 
     unpaired_msa = json_dict.get('unpairedMsa', None)
+    unpaired_msa_path = json_dict.get('unpairedMsaPath', None)
+    if unpaired_msa and unpaired_msa_path:
+      raise ValueError('Only one of unpairedMsa/unpairedMsaPath can be set.')
+    elif unpaired_msa_path:
+      unpaired_msa = _read_file(pathlib.Path(unpaired_msa_path), json_path)
+
     paired_msa = json_dict.get('pairedMsa', None)
+    paired_msa_path = json_dict.get('pairedMsaPath', None)
+    if paired_msa and paired_msa_path:
+      raise ValueError('Only one of pairedMsa/pairedMsaPath can be set.')
+    elif paired_msa_path:
+      paired_msa = _read_file(pathlib.Path(paired_msa_path), json_path)
 
     raw_templates = json_dict.get('templates', None)
 
     if raw_templates is None:
       templates = None
     else:
-      templates = [
-          Template(
-              mmcif=template['mmcif'],
-              query_to_template_map=dict(
-                  zip(template['queryIndices'], template['templateIndices'])
-              ),
-          )
-          for template in raw_templates
-      ]
+      templates = []
+      for raw_template in raw_templates:
+        mmcif = raw_template.get('mmcif', None)
+        mmcif_path = raw_template.get('mmcifPath', None)
+        if mmcif and mmcif_path:
+          raise ValueError('Only one of mmcif/mmcifPath can be set.')
+        if mmcif_path:
+          mmcif = _read_file(pathlib.Path(mmcif_path), json_path)
+        query_to_template_map = dict(
+            zip(raw_template['queryIndices'], raw_template['templateIndices'])
+        )
+        templates.append(
+            Template(mmcif=mmcif, query_to_template_map=query_to_template_map)
+        )
 
     return cls(
         id=seq_id or json_dict['id'],
@@ -291,19 +350,30 @@ class RnaChain:
 
   @classmethod
   def from_dict(
-      cls, json_dict: Mapping[str, Any], seq_id: str | None = None
+      cls,
+      json_dict: Mapping[str, Any],
+      json_path: pathlib.Path | None = None,
+      seq_id: str | None = None,
   ) -> Self:
     """Constructs RnaChain from the AlphaFold JSON dict."""
     json_dict = json_dict['rna']
     _validate_keys(
-        json_dict.keys(), {'id', 'sequence', 'unpairedMsa', 'modifications'}
+        json_dict.keys(),
+        {'id', 'sequence', 'unpairedMsa', 'unpairedMsaPath', 'modifications'},
     )
     sequence = json_dict['sequence']
     modifications = [
         (mod['modificationType'], mod['basePosition'])
         for mod in json_dict.get('modifications', [])
     ]
+
     unpaired_msa = json_dict.get('unpairedMsa', None)
+    unpaired_msa_path = json_dict.get('unpairedMsaPath', None)
+    if unpaired_msa and unpaired_msa_path:
+      raise ValueError('Only one of unpairedMsa/unpairedMsaPath can be set.')
+    elif unpaired_msa_path:
+      unpaired_msa = _read_file(pathlib.Path(unpaired_msa_path), json_path)
+
     return cls(
         id=seq_id or json_dict['id'],
         sequence=sequence,
@@ -658,7 +728,9 @@ class Input:
     return cls(name=fold_job['name'], chains=chains, rng_seeds=rng_seeds)
 
   @classmethod
-  def from_json(cls, json_str: str) -> Self:
+  def from_json(
+      cls, json_str: str, json_path: pathlib.Path | None = None
+  ) -> Self:
     """Loads the input from the AlphaFold JSON string."""
     raw_json = json.loads(json_str)
 
@@ -686,11 +758,10 @@ class Input:
           f' {raw_json["dialect"]}, expected {JSON_DIALECT}.'
       )
 
-    # For now, there is only one AlphaFold 3 JSON version.
-    if raw_json['version'] != JSON_VERSION:
+    if raw_json['version'] not in JSON_VERSIONS:
       raise ValueError(
           'AlphaFold 3 input JSON has unsupported version:'
-          f' {raw_json["version"]}, expected {JSON_VERSION}.'
+          f' {raw_json["version"]}, expected one of {JSON_VERSIONS}.'
       )
 
     if 'sequences' not in raw_json:
@@ -728,9 +799,9 @@ class Input:
         raise ValueError(f'Chain {seq_ids} has more than 1 sequence.')
       for seq_id in seq_ids:
         if 'protein' in sequence:
-          chains.append(ProteinChain.from_dict(sequence, seq_id=seq_id))
+          chains.append(ProteinChain.from_dict(sequence, json_path, seq_id))
         elif 'rna' in sequence:
-          chains.append(RnaChain.from_dict(sequence, seq_id=seq_id))
+          chains.append(RnaChain.from_dict(sequence, json_path, seq_id))
         elif 'dna' in sequence:
           chains.append(DnaChain.from_dict(sequence, seq_id=seq_id))
         elif 'ligand' in sequence:
@@ -806,11 +877,21 @@ class Input:
 
     struc = structure.from_mmcif(
         mmcif_str,
-        include_water=False,
+        # Change MSE residues to MET residues.
         fix_mse_residues=True,
+        # Fix arginine atom names. This is not needed since the input discards
+        # any atom-level data, but kept for consistency with the paper.
+        fix_arginines=True,
+        # Fix unknown DNA residues to the correct unknown DNA residue type.
         fix_unknown_dna=True,
-        include_bonds=True,
+        # Do not include water molecules.
+        include_water=False,
+        # Do not include things like DNA/RNA hybrids. This will be changed once
+        # we have a way of handling these in the AlphaFold 3 input format.
         include_other=False,
+        # Include the specific bonds defined in the mmCIF bond table, e.g.
+        # covalent bonds for PTMs.
+        include_bonds=True,
     )
 
     # Create default bioassembly, expanding structures implied by stoichiometry.
@@ -1004,16 +1085,7 @@ class Input:
     return ''.join(l for l in lower_spaceless_name if l in allowed_chars)
 
 
-def check_unique_sanitised_names(fold_inputs: Sequence[Input]) -> None:
-  """Checks that the names of the fold inputs are unique."""
-  names = [fi.sanitised_name() for fi in fold_inputs]
-  if len(set(names)) != len(names):
-    raise ValueError(
-        f'Fold inputs must have unique sanitised names, got {names}.'
-    )
-
-
-def load_fold_inputs_from_path(json_path: pathlib.Path) -> Sequence[Input]:
+def load_fold_inputs_from_path(json_path: pathlib.Path) -> Iterator[Input]:
   """Loads multiple fold inputs from a JSON string."""
   with open(json_path, 'r') as f:
     json_str = f.read()
@@ -1021,7 +1093,6 @@ def load_fold_inputs_from_path(json_path: pathlib.Path) -> Sequence[Input]:
   # Parse the JSON string, so we can detect its format.
   raw_json = json.loads(json_str)
 
-  fold_inputs = []
   if isinstance(raw_json, list):
     # AlphaFold Server JSON.
     logging.info(
@@ -1033,7 +1104,7 @@ def load_fold_inputs_from_path(json_path: pathlib.Path) -> Sequence[Input]:
     logging.info('Loading %d fold jobs from %s', len(raw_json), json_path)
     for fold_job_idx, fold_job in enumerate(raw_json):
       try:
-        fold_inputs.append(Input.from_alphafoldserver_fold_job(fold_job))
+        yield Input.from_alphafoldserver_fold_job(fold_job)
       except ValueError as e:
         raise ValueError(
             f'Failed to load fold job {fold_job_idx} from {json_path}. The JSON'
@@ -1047,7 +1118,7 @@ def load_fold_inputs_from_path(json_path: pathlib.Path) -> Sequence[Input]:
     )
     # AlphaFold 3 JSON.
     try:
-      fold_inputs.append(Input.from_json(json_str))
+      yield Input.from_json(json_str, json_path)
     except ValueError as e:
       raise ValueError(
           f'Failed to load fold input from {json_path}. The JSON at'
@@ -1055,30 +1126,18 @@ def load_fold_inputs_from_path(json_path: pathlib.Path) -> Sequence[Input]:
           ' top-level is not a list.'
       ) from e
 
-  check_unique_sanitised_names(fold_inputs)
 
-  return fold_inputs
-
-
-def load_fold_inputs_from_dir(input_dir: pathlib.Path) -> Sequence[Input]:
+def load_fold_inputs_from_dir(input_dir: pathlib.Path) -> Iterator[Input]:
   """Loads multiple fold inputs from all JSON files in a given input_dir.
 
   Args:
     input_dir: The directory containing the JSON files.
 
-  Returns:
+  Yields:
     The fold inputs from all JSON files in the input directory.
-
-  Raises:
-    ValueError: If the fold inputs have non-unique sanitised names.
   """
-  fold_inputs = []
   for file_path in input_dir.glob('*.json'):
     if not file_path.is_file():
       continue
 
-    fold_inputs.extend(load_fold_inputs_from_path(file_path))
-
-  check_unique_sanitised_names(fold_inputs)
-
-  return fold_inputs
+    yield from load_fold_inputs_from_path(file_path)

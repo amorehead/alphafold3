@@ -231,6 +231,12 @@ class Table:
   ) -> Iterator[Mapping[str, Any]]:
     """Yields rows from the table.
 
+    This can be used to easily convert a table to a Pandas dataframe:
+
+    ```py
+    df = pd.DataFrame(table.iterrows())
+    ```
+
     Args:
       row_keys: An optional array of keys of rows to yield. If None, all rows
         will be yielded.
