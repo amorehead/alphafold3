@@ -1154,4 +1154,7 @@ def load_fold_inputs_from_dir(input_dir: pathlib.Path) -> Iterator[Input]:
     if not file_path.is_file():
       continue
 
-    yield from load_fold_inputs_from_path(file_path)
+    try:
+      yield from load_fold_inputs_from_path(file_path)
+    except Exception as e:
+      logging.error(f'Failed to load fold inputs from {file_path} due to: {e}. Skipping this fold input.')
