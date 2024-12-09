@@ -136,8 +136,8 @@ def mmcif_to_info(mmcif: Mapping[str, Sequence[str]]) -> ComponentInfo:
     mon_nstd_flag = 'n'
 
   pdbx_smiles = ''
-  descriptor_types = mmcif['_pdbx_chem_comp_descriptor.type']
-  descriptors = mmcif['_pdbx_chem_comp_descriptor.descriptor']
+  descriptor_types = mmcif.get('_pdbx_chem_comp_descriptor.type', [])
+  descriptors = mmcif.get('_pdbx_chem_comp_descriptor.descriptor', [])
   for descriptor_type, descriptor in zip(descriptor_types, descriptors):
     if descriptor_type == 'SMILES_CANONICAL':
       pdbx_smiles = descriptor

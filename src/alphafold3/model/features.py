@@ -775,8 +775,7 @@ class Templates:
           )
 
           template_features = data3.fix_template_features(
-              sequence=chain.sequence,
-              template_features=template_features,
+              template_features=template_features, num_res=len(chain.sequence)
           )
 
         template_features = _reduce_template_features(

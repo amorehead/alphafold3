@@ -34,3 +34,10 @@ V100 devices).
 
 CUDA Capability 6.x GPUs give reasonable output, but large scale numerical
 testing has only been done for P100.
+
+## Incorrect handling of two-letter atoms in SMILES ligands
+
+Between commits https://github.com/google-deepmind/alphafold3/commit/f8df1c7 and
+https://github.com/google-deepmind/alphafold3/commit/4e4023c, AlphaFold 3
+handled incorrectly any two-letter atoms (e.g. Cl, Br) in ligands defined using
+SMILES strings.
